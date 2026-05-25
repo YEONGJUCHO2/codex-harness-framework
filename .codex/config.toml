@@ -1,0 +1,4 @@
+[features]
+# Official docs use codex_hooks; this CLI also reports hooks as the stable flag.
+codex_hooks = true
+hooks = true

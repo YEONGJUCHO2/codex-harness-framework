@@ -1,0 +1,13 @@
+node_modules/
+.venv/
+.pytest_cache/
+__pycache__/
+*.py[cod]
+.next/
+out/
+next-env.d.ts
+tsconfig.tsbuildinfo
+
+# phase execution outputs
+phases/**/phase*-output.json
+phases/**/step*-output.json
