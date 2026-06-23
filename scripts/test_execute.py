@@ -154,6 +154,20 @@ class TestLoadGuardrails:
         assert "# Architecture" in result
         assert "# Guide" in result
 
+    def test_loads_phase_agents_and_phase_docs(self, executor, tmp_project, phase_dir):
+        (phase_dir / "AGENTS.md").write_text("# Phase Rules\n- phase rule")
+        phase_docs = phase_dir / "docs"
+        phase_docs.mkdir()
+        (phase_docs / "security.md").write_text("# Security\nphase doc")
+
+        with patch.object(ex, "ROOT", tmp_project):
+            result = executor._load_guardrails()
+
+        assert "Phase Rules" in result
+        assert "phase rule" in result
+        assert "Phase Doc: security" in result
+        assert "phase doc" in result
+
     def test_sections_separated_by_divider(self, executor, tmp_project):
         with patch.object(ex, "ROOT", tmp_project):
             result = executor._load_guardrails()
@@ -276,6 +290,50 @@ class TestBuildPreamble:
         assert "커밋하지 마라" in result
         assert "execute.py가 커밋을 담당" in result
         assert "모든 변경사항을 커밋하라" not in result
+
+    def test_implementation_agent_cannot_complete_step(self, executor):
+        result = executor._build_preamble("", "")
+        assert "Do not set this step to completed" in result
+        assert "ready_for_review" in result
+
+    def test_implementation_verification_is_review_agent_owned(self, executor):
+        result = executor._build_preamble("", "")
+        assert "official AC lint/test/build verification is performed by the review agent" in result
+
+
+# ---------------------------------------------------------------------------
+# review and phase eval prompts
+# ---------------------------------------------------------------------------
+
+class TestReviewAndEvalPrompts:
+    def test_review_prompt_runs_standard_commands(self, executor):
+        step = {"step": 2, "name": "ui"}
+        report_path = executor._phase_dir / "reviews" / "step2-review-cycle1.json"
+
+        result = executor._build_review_prompt(
+            guardrails="GUARDS",
+            step_context="",
+            step=step,
+            cycle=1,
+            report_path=report_path,
+        )
+
+        assert "strict review-only subagent" in result
+        assert "npm run lint" in result
+        assert "npm run test" in result
+        assert "npm run build" in result
+        assert "Do not modify implementation code" in result
+        assert "changes_requested" in result
+
+    def test_phase_eval_prompt_uses_rubric_not_primary_build_gate(self, executor):
+        report_path = executor._phase_dir / "eval" / "phase-eval.json"
+
+        result = executor._build_phase_eval_prompt(guardrails="GUARDS", report_path=report_path)
+
+        assert "rubric" in result
+        assert "overallScore >= 85" in result
+        assert "docs drift" in result
+        assert "Do not repeat full lint/test/build as the primary evaluation" in result
 
 
 # ---------------------------------------------------------------------------
