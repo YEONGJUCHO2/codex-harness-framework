@@ -1,12 +1,36 @@
 {
   "hooks": {
-    "PreToolUse": [
+    "Stop": [
       {
-        "matcher": "Edit|Write|apply_patch",
+        "matcher": "",
         "hooks": [
           {
             "type": "command",
-            "command": "ROOT=$(git rev-parse --show-toplevel 2>/dev/null || pwd); bash \"$ROOT/.codex/hooks/tdd-guard.sh\"",
+            "command": "ROOT=\"${CODEX_PROJECT_DIR:-${CLAUDE_PROJECT_DIR:-$(git rev-parse --show-toplevel 2>/dev/null || pwd)}}\"; bash \"$ROOT/.codex/hooks/stop-verification.sh\"",
+            "timeout": 600,
+            "statusMessage": "Running lint, build, and test"
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "Bash|Shell|shell|exec_command|functions.exec_command",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "ROOT=\"${CODEX_PROJECT_DIR:-${CLAUDE_PROJECT_DIR:-$(git rev-parse --show-toplevel 2>/dev/null || pwd)}}\"; bash \"$ROOT/.codex/hooks/deny-dangerous-command.sh\"",
+            "timeout": 30,
+            "statusMessage": "Checking dangerous command guard"
+          }
+        ]
+      },
+      {
+        "matcher": "Edit|Write|MultiEdit|apply_patch",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "ROOT=\"${CODEX_PROJECT_DIR:-${CLAUDE_PROJECT_DIR:-$(git rev-parse --show-toplevel 2>/dev/null || pwd)}}\"; bash \"$ROOT/.codex/hooks/tdd-guard.sh\"",
             "timeout": 30,
             "statusMessage": "Checking TDD guard"
           }

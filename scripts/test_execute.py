@@ -298,7 +298,7 @@ class TestBuildPreamble:
 
     def test_implementation_verification_is_review_agent_owned(self, executor):
         result = executor._build_preamble("", "")
-        assert "official AC lint/test/build verification is performed by the review agent" in result
+        assert "official AC lint/build/test verification is performed by the review agent" in result
 
 
 # ---------------------------------------------------------------------------
@@ -319,9 +319,10 @@ class TestReviewAndEvalPrompts:
         )
 
         assert "strict review-only subagent" in result
-        assert "npm run lint" in result
-        assert "npm run test" in result
-        assert "npm run build" in result
+        lint_pos = result.index("npm run lint")
+        build_pos = result.index("npm run build")
+        test_pos = result.index("npm run test")
+        assert lint_pos < build_pos < test_pos
         assert "Do not modify implementation code" in result
         assert "changes_requested" in result
 
@@ -333,7 +334,7 @@ class TestReviewAndEvalPrompts:
         assert "rubric" in result
         assert "overallScore >= 85" in result
         assert "docs drift" in result
-        assert "Do not repeat full lint/test/build as the primary evaluation" in result
+        assert "Do not repeat full lint/build/test as the primary evaluation" in result
 
 
 # ---------------------------------------------------------------------------

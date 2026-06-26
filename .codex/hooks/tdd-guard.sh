@@ -13,7 +13,7 @@ if [ -z "$INPUT" ]; then
   exit 0
 fi
 
-PROJECT_ROOT=$(git rev-parse --show-toplevel 2>/dev/null || pwd)
+PROJECT_ROOT=${CODEX_PROJECT_DIR:-${CLAUDE_PROJECT_DIR:-$(git rev-parse --show-toplevel 2>/dev/null || pwd)}}
 
 deny() {
   local reason="$1"
@@ -32,27 +32,27 @@ PY
 }
 
 PATHS=$(
-  python3 - "$INPUT" <<'PY'
+  printf '%s' "$INPUT" | python3 -c '
 import json
 import re
 import sys
 
 try:
-    payload = json.loads(sys.argv[1])
-except Exception:
+    payload = json.load(sys.stdin)
+except json.JSONDecodeError:
+    sys.exit(0)
+
+if not isinstance(payload, dict):
     sys.exit(0)
 
 tool_input = payload.get("tool_input") or {}
 items = []
 
-for key in ("file_path", "path", "filename"):
-    value = tool_input.get(key)
-    if isinstance(value, str) and value:
-        items.append(("update", value))
+def collect_patch_text(value):
+    if not isinstance(value, str):
+        return
 
-command = tool_input.get("command") or tool_input.get("cmd") or ""
-if isinstance(command, str):
-    for line in command.splitlines():
+    for line in value.splitlines():
         match = re.match(r"^\*\*\* (Add|Update|Delete) File: (.+)$", line)
         if match:
             items.append((match.group(1).lower(), match.group(2).strip()))
@@ -61,6 +61,18 @@ if isinstance(command, str):
         if match:
             items.append(("update", match.group(1).strip()))
 
+
+if isinstance(tool_input, str):
+    collect_patch_text(tool_input)
+elif isinstance(tool_input, dict):
+    for key in ("file_path", "path", "filename"):
+        value = tool_input.get(key)
+        if isinstance(value, str) and value:
+            items.append(("update", value))
+
+    for key in ("command", "cmd", "patch", "input"):
+        collect_patch_text(tool_input.get(key))
+
 seen = set()
 for action, path in items:
     key = (action, path)
@@ -68,7 +80,7 @@ for action, path in items:
         continue
     seen.add(key)
     print(f"{action}\t{path}")
-PY
+'
 )
 
 if [ -z "$PATHS" ]; then
@@ -77,9 +89,14 @@ fi
 
 has_test_for() {
   local file_path="$1"
-  local dir_name base_name parent_dir ext
+  local project_file_path dir_name base_name parent_dir ext
 
-  dir_name=$(dirname "$file_path")
+  case "$file_path" in
+    /*) project_file_path="$file_path" ;;
+    *) project_file_path="${PROJECT_ROOT}/${file_path}" ;;
+  esac
+
+  dir_name=$(dirname "$project_file_path")
   base_name=$(basename "$file_path" | sed -E 's/\.(ts|tsx|js|jsx)$//')
   parent_dir=$(dirname "$dir_name")
 

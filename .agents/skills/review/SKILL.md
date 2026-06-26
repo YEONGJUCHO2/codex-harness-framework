@@ -30,8 +30,8 @@ For step-level review, run:
 
 ```bash
 npm run lint
-npm run test
 npm run build
+npm run test
 ```
 
 If a command fails, the decision is `changes_requested` unless the failure is caused by missing user input, credentials, or manual setup. In that case, use `blocked`.
@@ -84,8 +84,8 @@ When invoked by the Harness executor, write the requested JSON report and do not
   "summary": "short review summary",
   "commands": [
     { "cmd": "npm run lint", "exitCode": 0, "summary": "result" },
-    { "cmd": "npm run test", "exitCode": 0, "summary": "result" },
-    { "cmd": "npm run build", "exitCode": 0, "summary": "result" }
+    { "cmd": "npm run build", "exitCode": 0, "summary": "result" },
+    { "cmd": "npm run test", "exitCode": 0, "summary": "result" }
   ],
   "findings": [
     {

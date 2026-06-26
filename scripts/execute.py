@@ -309,7 +309,7 @@ class StepExecutor:
             "## 작업 규칙 / Implementation Rules\n\n"
             "1. Perform only the work requested by this step.\n"
             "2. Add or update tests required by the implementation.\n"
-            "3. You may run targeted checks while debugging, but official AC lint/test/build verification is performed by the review agent.\n"
+            "3. You may run targeted checks while debugging, but official AC lint/build/test verification is performed by the review agent.\n"
             "4. Do not set this step to completed. Only scripts/execute.py may set completed.\n"
             f"5. Update /phases/{self._phase_dir_name}/index.json for this step:\n"
             "   - Ready for review: set \"status\": \"ready_for_review\" and add a concise \"summary\".\n"
@@ -338,8 +338,8 @@ class StepExecutor:
             "summary": "short review summary",
             "commands": [
                 {"cmd": "npm run lint", "exitCode": 0, "summary": "result"},
-                {"cmd": "npm run test", "exitCode": 0, "summary": "result"},
                 {"cmd": "npm run build", "exitCode": 0, "summary": "result"},
+                {"cmd": "npm run test", "exitCode": 0, "summary": "result"},
             ],
             "findings": [
                 {
@@ -360,7 +360,7 @@ class StepExecutor:
             f"## Step Under Review\n\nStep {step_num}: {step_name}\n\n"
             f"{step_file.read_text(encoding='utf-8')}\n\n---\n\n"
             "## Verification Commands\n\nRun:\n\n"
-            "```bash\nnpm run lint\nnpm run test\nnpm run build\n```\n\n"
+            "```bash\nnpm run lint\nnpm run build\nnpm run test\n```\n\n"
             "## Review Scope\n\n"
             "- Inspect the current git diff for this step.\n"
             "- Check requirement compliance against the step task and PRD.\n"
@@ -419,7 +419,7 @@ class StepExecutor:
             "## Evaluation Rules\n\n"
             "- Review the completed step summaries, review reports, and current git diff.\n"
             "- Score the phase with the rubric below on a 0-100 scale.\n"
-            "- Do not repeat full lint/test/build as the primary evaluation; step reviewers already own that gate.\n"
+            "- Do not repeat full lint/build/test as the primary evaluation; step reviewers already own that gate.\n"
             "- You may run additional checks only when needed to support a finding.\n"
             "- If this is a frontend phase and the app can be run, include Lighthouse-style UX/performance observations when practical.\n"
             "- Treat unresolved docs drift as changes_requested.\n"

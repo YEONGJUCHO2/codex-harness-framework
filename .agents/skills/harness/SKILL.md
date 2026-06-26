@@ -174,6 +174,9 @@ python3 scripts/execute.py 01-login --push
 
 - Creating or checking out `feat-{phase}`.
 - Injecting root `AGENTS.md`, root `docs/*.md`, phase `AGENTS.md`, and phase docs.
+- Loading Codex hooks through `CODEX_PROJECT_DIR`, `CLAUDE_PROJECT_DIR`, git root, then `pwd` fallback.
+- Running `npm run lint`, `npm run build`, and `npm run test` from the Stop hook when the target repository has `package.json`.
+- Blocking high-risk shell commands through `.codex/hooks/deny-dangerous-command.sh`.
 - Passing completed step summaries to later implementation and review sessions.
 - Running implementation sessions until `ready_for_review`.
 - Running strict review-only sessions for each step.

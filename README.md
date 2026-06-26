@@ -8,6 +8,7 @@ This repository is a template. It intentionally does not include app implementat
 
 Copy these files into an app repository:
 
+- `.gitignore`
 - `AGENTS.md`
 - `docs/PRD.md`
 - `docs/ARCHITECTURE.md`
@@ -17,9 +18,13 @@ Copy these files into an app repository:
 - `.agents/skills/review/SKILL.md`
 - `.codex/config.toml`
 - `.codex/hooks.json`
+- `.codex/hooks/deny-dangerous-command.sh`
+- `.codex/hooks/stop-verification.sh`
 - `.codex/hooks/tdd-guard.sh`
 - `scripts/execute.py`
 - `scripts/test_execute.py`
+- `scripts/test_dangerous_command_guard.py`
+- `scripts/test_stop_verification_hook.py`
 - `scripts/test_tdd_guard.py`
 - `requirements-dev.txt`
 
@@ -42,9 +47,12 @@ Use `--push` only when the phase branch should be pushed after completion.
 
 - Skills live in `.agents/skills`, matching the Codex live demo structure.
 - Codex hooks are enabled by `.codex/config.toml`.
+- Codex hook commands resolve the project root through `CODEX_PROJECT_DIR`, `CLAUDE_PROJECT_DIR`, git root, then `pwd`.
+- The Stop hook runs `npm run lint`, `npm run build`, and `npm run test` when a copied target repository has `package.json`.
 - The default hook is a TDD guard that blocks implementation edits when a matching test file does not exist.
+- A dangerous-command guard blocks high-risk shell commands such as `rm -rf`, `git push --force`, `git reset --hard`, and `DROP TABLE`.
 - Implementation sessions must submit work as `ready_for_review`, but must not mark steps `completed`.
-- Review sessions run the official verification commands: `npm run lint`, `npm run test`, and `npm run build`.
+- Review sessions run the official verification commands: `npm run lint`, `npm run build`, and `npm run test`.
 - Review-requested changes consume review cycles, not implementation-attempt retries.
 - `scripts/execute.py` is the only component that marks a step `completed`.
 - `scripts/execute.py` injects root `AGENTS.md`, root `docs/*.md`, phase `AGENTS.md`, and phase docs when present.
@@ -76,7 +84,7 @@ phases/
 Each step uses two separate loops:
 
 - Implementation loop: up to 3 attempts to produce `ready_for_review`.
-- Review loop: up to 3 review cycles. The review-only session runs lint/test/build and writes a JSON report.
+- Review loop: up to 3 review cycles. The review-only session runs lint/build/test and writes a JSON report.
 
 After every step is approved, the phase evaluator writes `phases/{phase}/eval/phase-eval.json` with rubric scores. Phase completion requires approval from this eval gate.
 
@@ -88,7 +96,7 @@ Framework tests are Python tests:
 python3 -m venv .venv
 . .venv/bin/activate
 pip install -r requirements-dev.txt
-python -m pytest scripts/test_execute.py scripts/test_tdd_guard.py -q
+python -m pytest scripts/test_execute.py scripts/test_tdd_guard.py scripts/test_dangerous_command_guard.py scripts/test_stop_verification_hook.py -q
 ```
 
-These tests validate the Harness executor and TDD guard, not the target app's own test suite.
+These tests validate the Harness executor and Codex hooks, not the target app's own test suite.
