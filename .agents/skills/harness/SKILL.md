@@ -26,7 +26,7 @@ If the phase has local guardrails, also read:
 
 ### B. Discuss
 
-If the implementation needs product clarification or a technical decision, present the decision point before creating phase files or editing implementation files.
+If the implementation needs product clarification, technical direction, credentials, production access, destructive data changes, or a safety-sensitive decision, present the decision point before creating phase files or editing implementation files. If the user gives a concrete task and explicitly authorizes execution through PR or merge, do not make them fill a large blank template or approve repeated cards; proceed within that boundary and stop only for the gated cases above.
 
 ### C. Design Steps
 
@@ -168,7 +168,18 @@ Run a planned task only when the user asks for execution.
 ```bash
 python3 scripts/execute.py 01-login
 python3 scripts/execute.py 01-login --push
+python3 scripts/execute.py 01-login --pr
+python3 scripts/execute.py 01-login --merge
 ```
+
+Release modes:
+
+- default: complete the phase locally.
+- `--push`: push `feat-{phase}` after approved phase completion.
+- `--pr`: push and create or reuse a GitHub PR.
+- `--merge`: push, create or reuse a PR, wait for checks, and merge only when checks pass. Do not force-merge failing or conflicting PRs.
+
+Use `--pr` or `--merge` only when the user's command authorizes that boundary.
 
 `execute.py` handles:
 
@@ -186,6 +197,8 @@ python3 scripts/execute.py 01-login --push
 - Separating code commits from phase metadata commits.
 - Recording `created_at`, `started_at`, `completed_at`, `failed_at`, `blocked_at`, and `review_failed_at`.
 - Running phase-level rubric evaluation after all steps are approved.
+- Optional release follow-through with `--push`, `--pr`, or `--merge` after the phase evaluator approves.
+- Preserving human gates for manual production deploys, credentials/secrets, destructive database work, git history rewrites, and final external durable records.
 
 Generated runtime files:
 

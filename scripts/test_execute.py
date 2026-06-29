@@ -590,6 +590,102 @@ class TestProgressIndicator:
 
 
 # ---------------------------------------------------------------------------
+# release workflow / PR merge orchestration (mocked)
+# ---------------------------------------------------------------------------
+
+class TestReleaseWorkflow:
+    def test_build_pr_body_declares_human_gated_boundaries(self, executor):
+        index = json.loads(executor._index_file.read_text())
+        index["phase_eval"] = {
+            "decision": "approved",
+            "overallScore": 91,
+            "report": "phases/0-mvp/eval/phase-eval.json",
+            "summary": "Phase is ready.",
+        }
+        executor._index_file.write_text(json.dumps(index))
+
+        body = executor._build_pr_body()
+
+        assert "Harness phase: mvp" in body
+        assert "CI/checks must pass before merge" in body
+        assert "must not force-merge" in body
+        assert "manual production deploys" in body
+        assert "credentials, secrets" in body
+        assert "Scoreboards, Next-Prompt" in body
+
+    def test_pr_mode_pushes_and_reuses_existing_open_pr(self, executor):
+        git_calls = []
+        gh_calls = []
+        executor._release_mode = "pr"
+        executor._run_git = lambda *args: git_calls.append(args) or MagicMock(returncode=0, stdout="", stderr="")
+        executor._run_gh = lambda *args, timeout=None: gh_calls.append(args) or MagicMock(
+            returncode=0,
+            stdout=json.dumps({"number": 7, "url": "https://github.test/pr/7", "state": "OPEN"}),
+            stderr="",
+        )
+
+        executor._release_after_finalize()
+
+        assert ("push", "-u", "origin", "feat-mvp") in git_calls
+        assert ("pr", "view", "feat-mvp", "--json", "number,url,state") in gh_calls
+        assert not any(call[:3] == ("pr", "create", "--base") for call in gh_calls)
+
+    def test_merge_mode_creates_pr_waits_for_checks_then_merges(self, executor):
+        git_calls = []
+        gh_calls = []
+        executor._release_mode = "merge"
+        executor._checks_timeout = 123
+        executor._run_git = lambda *args: git_calls.append(args) or MagicMock(returncode=0, stdout="", stderr="")
+
+        def fake_gh(*args, timeout=None):
+            gh_calls.append((args, timeout))
+            if args[:2] == ("pr", "view"):
+                return MagicMock(returncode=1, stdout="", stderr="not found")
+            if args[:2] == ("pr", "create"):
+                return MagicMock(returncode=0, stdout="https://github.test/pr/8\n", stderr="")
+            if args[:2] == ("pr", "checks"):
+                return MagicMock(returncode=0, stdout="checks passed", stderr="")
+            if args[:2] == ("pr", "merge"):
+                return MagicMock(returncode=0, stdout="merged", stderr="")
+            return MagicMock(returncode=0, stdout="", stderr="")
+
+        executor._run_gh = fake_gh
+
+        executor._release_after_finalize()
+
+        assert ("push", "-u", "origin", "feat-mvp") in git_calls
+        assert gh_calls[0][0][:2] == ("pr", "view")
+        assert gh_calls[1][0][:2] == ("pr", "create")
+        assert gh_calls[2][0][:2] == ("pr", "checks")
+        assert gh_calls[2][1] == 123
+        assert gh_calls[3][0][:2] == ("pr", "merge")
+        assert "--merge" in gh_calls[3][0]
+
+    def test_merge_mode_does_not_merge_when_checks_fail(self, executor):
+        gh_calls = []
+        executor._release_mode = "merge"
+        executor._run_git = lambda *args: MagicMock(returncode=0, stdout="", stderr="")
+
+        def fake_gh(*args, timeout=None):
+            gh_calls.append(args)
+            if args[:2] == ("pr", "view"):
+                return MagicMock(returncode=1, stdout="", stderr="not found")
+            if args[:2] == ("pr", "create"):
+                return MagicMock(returncode=0, stdout="https://github.test/pr/9\n", stderr="")
+            if args[:2] == ("pr", "checks"):
+                return MagicMock(returncode=1, stdout="", stderr="lint failed")
+            return MagicMock(returncode=0, stdout="", stderr="")
+
+        executor._run_gh = fake_gh
+
+        with pytest.raises(SystemExit) as exc_info:
+            executor._release_after_finalize()
+
+        assert exc_info.value.code == 1
+        assert not any(call[:2] == ("pr", "merge") for call in gh_calls)
+
+
+# ---------------------------------------------------------------------------
 # main() CLI 파싱 (mocked)
 # ---------------------------------------------------------------------------
 
@@ -614,6 +710,21 @@ class TestMainCli:
                 with pytest.raises(SystemExit) as exc_info:
                     ex.main()
                 assert exc_info.value.code == 1
+
+    def test_merge_cli_passes_release_options(self):
+        with patch("sys.argv", ["execute.py", "0-mvp", "--merge", "--base", "develop", "--merge-method", "squash", "--checks-timeout", "321"]):
+            with patch.object(ex.StepExecutor, "__init__", return_value=None) as init:
+                with patch.object(ex.StepExecutor, "run", return_value=None) as run:
+                    ex.main()
+
+        init.assert_called_once_with(
+            "0-mvp",
+            release_mode="merge",
+            base_branch="develop",
+            merge_method="squash",
+            checks_timeout=321,
+        )
+        run.assert_called_once()
 
 
 # ---------------------------------------------------------------------------

@@ -63,14 +63,33 @@ class StepExecutor:
 
     STEP_BLOCKING_STATUSES = {"error", "blocked", "review_failed"}
     REVIEW_DECISIONS = {"approved", "changes_requested", "blocked"}
+    RELEASE_MODES = {"local", "push", "pr", "merge"}
+    MERGE_METHODS = {"merge": "--merge", "squash": "--squash", "rebase": "--rebase"}
 
-    def __init__(self, phase_dir_name: str, *, auto_push: bool = False):
+    def __init__(
+        self,
+        phase_dir_name: str,
+        *,
+        auto_push: bool = False,
+        release_mode: Optional[str] = None,
+        base_branch: str = "main",
+        merge_method: str = "merge",
+        checks_timeout: int = 900,
+    ):
         self._root = str(ROOT)
         self._phases_dir = ROOT / "phases"
         self._phase_dir = self._phases_dir / phase_dir_name
         self._phase_dir_name = phase_dir_name
         self._top_index_file = self._phases_dir / "index.json"
-        self._auto_push = auto_push
+        self._release_mode = release_mode or ("push" if auto_push else "local")
+        if self._release_mode not in self.RELEASE_MODES:
+            raise ValueError(f"invalid release mode: {self._release_mode}")
+        if merge_method not in self.MERGE_METHODS:
+            raise ValueError(f"invalid merge method: {merge_method}")
+        self._auto_push = self._release_mode in {"push", "pr", "merge"}
+        self._base_branch = base_branch
+        self._merge_method = merge_method
+        self._checks_timeout = checks_timeout
 
         if not self._phase_dir.is_dir():
             print(f"ERROR: {self._phase_dir} not found")
@@ -134,8 +153,15 @@ class StepExecutor:
         cmd = ["git"] + list(args)
         return subprocess.run(cmd, cwd=self._root, capture_output=True, text=True)
 
+    def _run_gh(self, *args, timeout: Optional[int] = None) -> subprocess.CompletedProcess:
+        cmd = ["gh"] + list(args)
+        return subprocess.run(cmd, cwd=self._root, capture_output=True, text=True, timeout=timeout)
+
+    def _branch_name(self) -> str:
+        return f"feat-{self._phase_name}"
+
     def _checkout_branch(self):
-        branch = f"feat-{self._phase_name}"
+        branch = self._branch_name()
 
         r = self._run_git("rev-parse", "--git-dir")
         if r.returncode != 0:
@@ -494,8 +520,11 @@ class StepExecutor:
         print(f"  Phase: {self._phase_name} | Steps: {self._total}")
         print(f"  Implementation attempts: {self.MAX_IMPLEMENTATION_ATTEMPTS}")
         print(f"  Review cycles: {self.MAX_REVIEW_CYCLES}")
-        if self._auto_push:
-            print("  Auto-push: enabled")
+        print(f"  Release mode: {self._release_mode}")
+        if self._release_mode in {"pr", "merge"}:
+            print(f"  PR base: {self._base_branch}")
+        if self._release_mode == "merge":
+            print(f"  Merge method: {self._merge_method}; checks timeout: {self._checks_timeout}s")
         print(f"{'=' * 60}")
 
     def _check_blockers(self):
@@ -809,6 +838,127 @@ class StepExecutor:
         self._commit_housekeeping(f"chore({self._phase_name}): phase evaluation failed")
         sys.exit(1)
 
+    def _push_branch(self):
+        branch = self._branch_name()
+        r = self._run_git("push", "-u", "origin", branch)
+        if r.returncode != 0:
+            print(f"\n  ERROR: git push failed: {r.stderr.strip()}")
+            sys.exit(1)
+        print(f"  OK Pushed to origin/{branch}")
+
+    def _build_pr_body(self) -> str:
+        index = self._read_json(self._index_file)
+        eval_info = index.get("phase_eval", {})
+        step_lines = []
+        for step in index.get("steps", []):
+            summary = step.get("summary") or step.get("review_summary") or "completed"
+            step_lines.append(f"- Step {step.get('step')} `{step.get('name')}`: {summary}")
+
+        lines = [
+            f"## Harness phase: {self._phase_name}",
+            "",
+            "This PR was prepared by the portable Codex Harness after implementation, review-only verification, and phase evaluation gates.",
+            "",
+            "## Phase evaluation",
+            f"- Decision: {eval_info.get('decision', 'unknown')}",
+            f"- Overall score: {eval_info.get('overallScore', 'unknown')}",
+            f"- Report: `{eval_info.get('report', self._relative(self._eval_dir / 'phase-eval.json'))}`",
+            f"- Summary: {eval_info.get('summary', '')}",
+            "",
+            "## Step summaries",
+            *(step_lines or ["- No step summaries recorded."]),
+            "",
+            "## Verification contract",
+            "- Step review reports under `phases/{phase}/reviews/` own lint/build/test verification.",
+            "- Phase evaluation under `phases/{phase}/eval/phase-eval.json` owns the final rubric gate.",
+            "- CI/checks must pass before merge; the Harness must not force-merge failing or conflicting PRs.",
+            "",
+            "## Human-gated boundaries",
+            "The following are not authorized by this PR/merge automation unless separately approved by the user:",
+            "- manual production deploys or production alias changes",
+            "- credentials, secrets, tokens, or environment-value changes",
+            "- destructive database operations or git history rewrites",
+            "- final external durable records such as Scoreboards, Next-Prompt files, or Engineering Reports outside this repository.",
+        ]
+        return "\n".join(lines).replace("{phase}", self._phase_dir_name)
+
+    def _create_or_view_pr(self) -> str:
+        branch = self._branch_name()
+        existing = self._run_gh("pr", "view", branch, "--json", "number,url,state")
+        if existing.returncode == 0:
+            try:
+                data = json.loads(existing.stdout)
+            except json.JSONDecodeError:
+                data = {}
+            if data.get("state") == "OPEN" and data.get("url"):
+                print(f"  OK PR already open: {data['url']}")
+                return str(data["url"])
+
+        title = f"{self._phase_name}: Harness phase"
+        created = self._run_gh(
+            "pr",
+            "create",
+            "--base",
+            self._base_branch,
+            "--head",
+            branch,
+            "--title",
+            title,
+            "--body",
+            self._build_pr_body(),
+        )
+        if created.returncode != 0:
+            print(f"\n  ERROR: gh pr create failed: {created.stderr.strip()}")
+            sys.exit(1)
+        url = created.stdout.strip().splitlines()[-1]
+        print(f"  OK PR created: {url}")
+        return url
+
+    def _wait_for_pr_checks(self, pr_ref: str):
+        try:
+            result = self._run_gh(
+                "pr",
+                "checks",
+                pr_ref,
+                "--watch",
+                "--fail-fast",
+                "--interval",
+                "10",
+                timeout=self._checks_timeout,
+            )
+        except subprocess.TimeoutExpired:
+            print(f"\n  ERROR: PR checks did not finish within {self._checks_timeout}s. Merge skipped.")
+            sys.exit(1)
+
+        if result.returncode != 0:
+            detail = result.stderr.strip() or result.stdout.strip()
+            print(f"\n  ERROR: PR checks failed or are incomplete. Merge skipped. {detail}")
+            sys.exit(1)
+        print("  OK PR checks passed")
+
+    def _merge_pr(self, pr_ref: str):
+        method_flag = self.MERGE_METHODS[self._merge_method]
+        result = self._run_gh("pr", "merge", pr_ref, method_flag, "--delete-branch")
+        if result.returncode != 0:
+            print(f"\n  ERROR: gh pr merge failed. No force merge attempted. {result.stderr.strip()}")
+            sys.exit(1)
+        print("  OK PR merged")
+
+    def _release_after_finalize(self):
+        if self._release_mode == "local":
+            return
+
+        self._push_branch()
+        if self._release_mode == "push":
+            return
+
+        pr_ref = self._create_or_view_pr()
+        if self._release_mode == "pr":
+            return
+
+        self._wait_for_pr_checks(pr_ref)
+        self._merge_pr(pr_ref)
+
     def _finalize(self):
         index = self._read_json(self._index_file)
         index["completed_at"] = self._stamp()
@@ -822,13 +972,7 @@ class StepExecutor:
             if r.returncode == 0:
                 print(f"  OK {msg}")
 
-        if self._auto_push:
-            branch = f"feat-{self._phase_name}"
-            r = self._run_git("push", "-u", "origin", branch)
-            if r.returncode != 0:
-                print(f"\n  ERROR: git push failed: {r.stderr.strip()}")
-                sys.exit(1)
-            print(f"  OK Pushed to origin/{branch}")
+        self._release_after_finalize()
 
         print(f"\n{'=' * 60}")
         print(f"  Phase '{self._phase_name}' completed!")
@@ -839,9 +983,21 @@ def main():
     parser = argparse.ArgumentParser(description="Harness Step Executor")
     parser.add_argument("phase_dir", help="Phase directory name (e.g. 01-login)")
     parser.add_argument("--push", action="store_true", help="Push branch after completion")
+    parser.add_argument("--pr", action="store_true", help="Push branch and create a GitHub PR after completion")
+    parser.add_argument("--merge", action="store_true", help="Push, create or reuse PR, wait for checks, and merge when checks pass")
+    parser.add_argument("--base", default="main", help="Base branch for PR creation")
+    parser.add_argument("--merge-method", choices=sorted(StepExecutor.MERGE_METHODS), default="merge", help="GitHub merge method")
+    parser.add_argument("--checks-timeout", type=int, default=900, help="Seconds to wait for PR checks before skipping merge")
     args = parser.parse_args()
 
-    StepExecutor(args.phase_dir, auto_push=args.push).run()
+    release_mode = "merge" if args.merge else "pr" if args.pr else "push" if args.push else "local"
+    StepExecutor(
+        args.phase_dir,
+        release_mode=release_mode,
+        base_branch=args.base,
+        merge_method=args.merge_method,
+        checks_timeout=args.checks_timeout,
+    ).run()
 
 
 if __name__ == "__main__":

@@ -44,6 +44,23 @@ def test_blocks_force_push_command():
     assert output["hookSpecificOutput"]["permissionDecision"] == "deny"
 
 
+def test_blocks_manual_production_deploy():
+    result = run_guard(command_payload("vercel deploy --prod"))
+
+    assert result.returncode == 0
+    output = json.loads(result.stdout)
+    assert output["hookSpecificOutput"]["permissionDecision"] == "deny"
+    assert "vercel deploy --prod" in output["hookSpecificOutput"]["permissionDecisionReason"]
+
+
+def test_blocks_destructive_database_command():
+    result = run_guard(command_payload("psql -c 'TRUNCATE TABLE documents'"))
+
+    assert result.returncode == 0
+    output = json.loads(result.stdout)
+    assert output["hookSpecificOutput"]["permissionDecision"] == "deny"
+
+
 def test_blocks_nested_command_field():
     result = run_guard(
         {

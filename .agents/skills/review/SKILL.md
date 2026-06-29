@@ -48,6 +48,7 @@ Check these items:
 6. **Buildability**: do the verification commands pass?
 7. **Maintainability**: is the implementation coherent, localized, and free of unnecessary abstraction?
 8. **Docs drift**: did the change introduce architectural or operational knowledge that belongs in docs or phase rules?
+9. **Human-gated boundaries**: does the change avoid unauthorized manual production deploys, credentials/secrets changes, destructive DB work, git history rewrites, and final external durable-record writes?
 
 ## Decision
 
@@ -75,6 +76,7 @@ Then include this checklist table:
 | Buildability | pass/fail | {detail} |
 | Maintainability | pass/fail | {detail} |
 | Docs drift | pass/fail | {detail} |
+| Human-gated boundaries | pass/fail | {detail} |
 
 When invoked by the Harness executor, write the requested JSON report and do not modify implementation files. The report should include:
 

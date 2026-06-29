@@ -16,6 +16,9 @@
 - CRITICAL: 새 기능 구현 시 반드시 테스트를 먼저 작성하고, 테스트가 통과하는 구현을 작성할 것 (TDD)
 - CRITICAL: `rm -rf`, `git push --force`, `git reset --hard`, `DROP TABLE` 같은 고위험 명령은 직접 실행하지 말 것. `.codex/hooks/deny-dangerous-command.sh`가 이를 차단한다.
 - CRITICAL: 구현 세션은 step을 completed로 표시하지 말 것. 구현 완료 시 ready_for_review까지만 기록하고, completed는 리뷰 승인 후 하네스 executor만 기록할 것.
+- CRITICAL: PR merge는 CI/checks 통과 후에만 수행한다. 실패하거나 충돌하는 PR을 force-merge하지 말 것.
+- CRITICAL: 수동 production 배포, credentials/secrets 변경, 파괴적 DB 작업, git history rewrite, 외부 Scoreboard/Next-Prompt/Engineering Report 최종 기록은 별도 사용자 승인이 필요하다.
+- 사용자가 구체적인 작업과 PR/merge까지의 실행을 지시한 경우, 하네스는 추가 승인 카드 없이 branch → implementation → review/eval → commit → push → PR → checks → merge까지 진행할 수 있다.
 - 커밋 메시지는 conventional commits 형식을 따를 것 (feat:, fix:, docs:, refactor:)
 
 ## 명령어

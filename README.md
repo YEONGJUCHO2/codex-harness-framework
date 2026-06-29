@@ -9,10 +9,12 @@ This repository is a template. It intentionally does not include app implementat
 Copy these files into an app repository:
 
 - `.gitignore`
+- `.github/pull_request_template.md`
 - `AGENTS.md`
 - `docs/PRD.md`
 - `docs/ARCHITECTURE.md`
 - `docs/ADR.md`
+- `docs/HARNESS_WORKFLOW.md`
 - `docs/UI_GUIDE.md` when the app has a frontend
 - `.agents/skills/harness/SKILL.md`
 - `.agents/skills/review/SKILL.md`
@@ -41,7 +43,15 @@ Then replace the placeholders in `AGENTS.md` and `docs/*.md` with the target app
 python3 scripts/execute.py {task-name}
 ```
 
-Use `--push` only when the phase branch should be pushed after completion.
+5. To push, open a PR, or merge after checks pass, run one of:
+
+```bash
+python3 scripts/execute.py {task-name} --push
+python3 scripts/execute.py {task-name} --pr
+python3 scripts/execute.py {task-name} --merge
+```
+
+Use `--merge` only when the user's command authorizes merge after checks pass. It pushes the branch, creates or reuses a GitHub PR, waits for checks with fail-fast behavior, and merges only when checks pass. It does not force-merge failing or conflicting PRs.
 
 ## Contracts
 
@@ -57,6 +67,9 @@ Use `--push` only when the phase branch should be pushed after completion.
 - `scripts/execute.py` is the only component that marks a step `completed`.
 - `scripts/execute.py` injects root `AGENTS.md`, root `docs/*.md`, phase `AGENTS.md`, and phase docs when present.
 - `scripts/execute.py` records implementation outputs, review reports, phase eval reports, timestamps, and commits.
+- `scripts/execute.py --pr` pushes the phase branch and creates or reuses a GitHub PR.
+- `scripts/execute.py --merge` waits for PR checks and merges only when checks pass; it must not force-merge failing or conflicting PRs.
+- Manual production deploys, credentials/secrets, destructive database operations, git history rewrites, and final external durable records remain human-gated.
 - Root `AGENTS.md` should stay under 300 lines. Put detailed rules in `docs/` or phase-local `AGENTS.md`.
 
 ## Phase Layout
@@ -99,4 +112,4 @@ pip install -r requirements-dev.txt
 python -m pytest scripts/test_execute.py scripts/test_tdd_guard.py scripts/test_dangerous_command_guard.py scripts/test_stop_verification_hook.py -q
 ```
 
-These tests validate the Harness executor and Codex hooks, not the target app's own test suite.
+These tests validate the Harness executor, PR/merge orchestration, and Codex hooks, not the target app's own test suite.

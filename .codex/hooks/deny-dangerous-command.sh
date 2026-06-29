@@ -56,7 +56,7 @@ if [ -z "$COMMANDS" ]; then
   exit 0
 fi
 
-DANGEROUS_PATTERN='rm[[:space:]]+-rf|git[[:space:]]+push[[:space:]]+--force|git[[:space:]]+reset[[:space:]]+--hard|DROP[[:space:]]+TABLE'
+DANGEROUS_PATTERN='rm[[:space:]]+-rf|git[[:space:]]+push[[:space:]]+--force|git[[:space:]]+reset[[:space:]]+--hard|git[[:space:]]+filter-branch|git[[:space:]]+rebase[[:space:]]+(-i|--interactive)|DROP[[:space:]]+TABLE|TRUNCATE[[:space:]]+TABLE|DELETE[[:space:]]+FROM|vercel([[:space:]][^;&|]*)*[[:space:]]+--prod|firebase[[:space:]]+deploy|supabase[[:space:]]+db[[:space:]]+(push|reset)|prisma[[:space:]]+migrate[[:space:]]+deploy|drizzle-kit[[:space:]]+push|railway[[:space:]]+up|fly[[:space:]]+deploy|kubectl[[:space:]]+(apply|delete)'
 
 while IFS= read -r command; do
   [ -z "$command" ] && continue
