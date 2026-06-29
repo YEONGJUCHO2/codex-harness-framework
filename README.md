@@ -51,7 +51,7 @@ python3 scripts/execute.py {task-name} --pr
 python3 scripts/execute.py {task-name} --merge
 ```
 
-Use `--merge` only when the user's command authorizes merge after checks pass. It pushes the branch, creates or reuses a GitHub PR, waits for checks with fail-fast behavior, and merges only when checks pass. It does not force-merge failing or conflicting PRs.
+Use `--merge` only when the user's command authorizes merge after checks pass. It pushes the branch, creates or reuses a GitHub PR, waits for checks with fail-fast behavior, and merges only when checks pass. It does not force-merge failing or conflicting PRs, and it skips merge when GitHub reports no checks.
 
 ## Contracts
 

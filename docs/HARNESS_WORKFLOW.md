@@ -50,7 +50,7 @@ The Harness must not force-merge.
 - create or reuse an open PR for the branch,
 - run `gh pr checks --watch --fail-fast`,
 - merge only if checks pass,
-- stop and report if checks fail, time out, or the PR cannot merge cleanly.
+- stop and report if checks fail, are missing, time out, or the PR cannot merge cleanly.
 
 ## Human-gated boundaries
 

@@ -177,7 +177,7 @@ Release modes:
 - default: complete the phase locally.
 - `--push`: push `feat-{phase}` after approved phase completion.
 - `--pr`: push and create or reuse a GitHub PR.
-- `--merge`: push, create or reuse a PR, wait for checks, and merge only when checks pass. Do not force-merge failing or conflicting PRs.
+- `--merge`: push, create or reuse a PR, wait for checks, and merge only when checks pass. Do not force-merge failing or conflicting PRs; skip merge when GitHub reports no checks.
 
 Use `--pr` or `--merge` only when the user's command authorizes that boundary.
 
