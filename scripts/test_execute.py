@@ -361,7 +361,7 @@ class TestEvalPrompts:
         result = executor._build_phase_eval_prompt(guardrails="GUARDS", report_path=report_path)
 
         assert "Phase Evaluator Skill" in result
-        assert "Do not implement fixes" in result
+        assert "구현, 버그 수정, 테스트 수정, 문서 수정" in result
 
 
 # ---------------------------------------------------------------------------
