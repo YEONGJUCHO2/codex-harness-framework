@@ -310,16 +310,58 @@ class TestBuildPreamble:
 # ---------------------------------------------------------------------------
 
 class TestEvalPrompts:
+    def test_extracts_rubric_weights(self):
+        result = ex.StepExecutor._extract_rubric_weights(
+            """
+            ## Weights
+            - Correctness: 35
+            - Test Quality: 20
+            - Security: 15%
+            """
+        )
+
+        assert result == {"correctness": 35, "testQuality": 20, "security": 15}
+
     def test_phase_eval_prompt_uses_rubric_not_primary_build_gate(self, executor):
         report_path = executor._phase_dir / "eval" / "phase-eval.json"
 
         result = executor._build_phase_eval_prompt(guardrails="GUARDS", report_path=report_path)
 
         assert "rubric" in result
+        assert "rubricWeights" in result
         assert "overallScore >= 85" in result
         assert "docs drift" in result
         assert "Do not repeat full lint/build/test as the primary evaluation" in result
         assert "implementation sessions already own that deterministic gate" in result
+        assert "recommendedNextActions" in result
+
+    def test_phase_eval_prompt_includes_phase_specific_rubric(self, executor, phase_dir):
+        (phase_dir / "eval-rubric.md").write_text(
+            "# Eval Rubric\n\n"
+            "## Weights\n"
+            "- Correctness: 35\n"
+            "- Test Quality: 20\n\n"
+            "## Category Guidance\n"
+            "- Correctness: verify dashboard visibility."
+        )
+        report_path = executor._phase_dir / "eval" / "phase-eval.json"
+
+        result = executor._build_phase_eval_prompt(guardrails="GUARDS", report_path=report_path)
+
+        assert "Phase-Specific Evaluation Rubric" in result
+        assert "Parsed Rubric Weights" in result
+        assert '"correctness": 35' in result
+        assert '"testQuality": 20' in result
+        assert "Correctness: verify dashboard visibility" in result
+        assert "use them to compute overallScore" in result
+
+    def test_phase_eval_prompt_includes_phase_evaluator_skill(self, executor):
+        report_path = executor._phase_dir / "eval" / "phase-eval.json"
+
+        result = executor._build_phase_eval_prompt(guardrails="GUARDS", report_path=report_path)
+
+        assert "Phase Evaluator Skill" in result
+        assert "Do not implement fixes" in result
 
 
 # ---------------------------------------------------------------------------
@@ -529,6 +571,50 @@ class TestExecuteSingleStep:
         assert current["verified_by"] == "implementation_agent"
         assert current["summary"] == "UI implemented; lint/build/test passed"
         commit.assert_called_once_with(2, "ui")
+
+
+# ---------------------------------------------------------------------------
+# _run_phase_eval
+# ---------------------------------------------------------------------------
+
+class TestRunPhaseEval:
+    def test_records_recovery_actions_on_changes_requested(self, executor, phase_dir):
+        actions = [
+            {
+                "type": "add_followup_step",
+                "target": "phases/0-mvp/steps/step3.md",
+                "reason": "Missing edge-case handling",
+                "instructions": "Add a follow-up step for the missing case.",
+            }
+        ]
+
+        def fake_invoke(*args, **kwargs):
+            report_path = executor._eval_dir / "phase-eval.json"
+            report_path.parent.mkdir(parents=True, exist_ok=True)
+            report_path.write_text(
+                json.dumps(
+                    {
+                        "decision": "changes_requested",
+                        "overallScore": 82,
+                        "summary": "Needs a follow-up step.",
+                        "recommendedNextActions": actions,
+                    }
+                )
+            )
+            return {}
+
+        executor._invoke_codex = fake_invoke
+        executor._update_top_index = MagicMock()
+        executor._commit_housekeeping = MagicMock()
+        executor._print_recommended_actions = MagicMock()
+
+        with pytest.raises(SystemExit) as exc_info:
+            executor._run_phase_eval("GUARDS")
+
+        assert exc_info.value.code == 1
+        index = json.loads((phase_dir / "index.json").read_text())
+        assert index["evaluation_recovery_actions"] == actions
+        executor._print_recommended_actions.assert_called_once_with(actions)
 
 
 # ---------------------------------------------------------------------------

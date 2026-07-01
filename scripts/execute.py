@@ -10,6 +10,7 @@ completion. The executor owns final step completion metadata and commits.
 import argparse
 import contextlib
 import json
+import re
 import subprocess
 import sys
 import threading
@@ -256,6 +257,57 @@ class StepExecutor:
             return ""
         return "## 이전 Step 산출물 / Previous Step Outputs\n\n" + "\n".join(lines) + "\n\n"
 
+    @staticmethod
+    def _extract_rubric_weights(text: str) -> dict:
+        aliases = {
+            "correctness": "correctness",
+            "architecture": "architecture",
+            "testquality": "testQuality",
+            "test-quality": "testQuality",
+            "test quality": "testQuality",
+            "maintainability": "maintainability",
+            "security": "security",
+            "documentation": "documentation",
+            "ux": "ux",
+            "lighthouse": "lighthouse",
+        }
+        weights = {}
+        for raw_key, raw_value in re.findall(r"(?im)^\s*-?\s*([A-Za-z][A-Za-z -]+)\s*:\s*(\d{1,3})\s*%?\s*$", text):
+            key = aliases.get(raw_key.strip().lower().replace("_", " "))
+            if key:
+                weights[key] = int(raw_value)
+        return weights
+
+    def _load_phase_eval_rubric(self) -> str:
+        rubric_file = self._phase_dir / "eval-rubric.md"
+        if not rubric_file.exists():
+            return ""
+
+        rubric_text = rubric_file.read_text(encoding="utf-8")
+        weights = self._extract_rubric_weights(rubric_text)
+        weights_section = ""
+        if weights:
+            weights_section = (
+                "\n## Parsed Rubric Weights\n\n"
+                f"{json.dumps(weights, indent=2, ensure_ascii=False)}\n\n"
+            )
+
+        return (
+            f"## Phase-Specific Evaluation Rubric ({self._relative(rubric_file)})\n\n"
+            f"{rubric_text}\n\n"
+            f"{weights_section}"
+        )
+
+    def _load_phase_evaluator_skill(self) -> str:
+        skill_file = ROOT / ".agents" / "skills" / "phase-evaluator" / "SKILL.md"
+        if not skill_file.exists():
+            return ""
+
+        return (
+            f"## Phase Evaluator Skill ({self._relative(skill_file)})\n\n"
+            f"{skill_file.read_text(encoding='utf-8')}\n\n---\n\n"
+        )
+
     def _step_file(self, step_num: int) -> Path:
         candidates = [
             self._phase_dir / "steps" / f"step{step_num}.md",
@@ -318,10 +370,22 @@ class StepExecutor:
         report_rel = self._relative(report_path)
         index = self._read_json(self._index_file)
         summary = self._build_step_context(index)
+        phase_rubric = self._load_phase_eval_rubric()
+        evaluator_skill = self._load_phase_evaluator_skill()
         schema = {
             "phase": self._phase_name,
             "decision": "approved | changes_requested | blocked",
             "overallScore": 0,
+            "rubricWeights": {
+                "correctness": 0,
+                "architecture": 0,
+                "testQuality": 0,
+                "maintainability": 0,
+                "security": 0,
+                "documentation": 0,
+                "ux": None,
+                "lighthouse": None,
+            },
             "rubric": {
                 "correctness": 0,
                 "architecture": 0,
@@ -339,6 +403,14 @@ class StepExecutor:
                     "message": "specific issue",
                 }
             ],
+            "recommendedNextActions": [
+                {
+                    "type": "reset_step | add_followup_step | docs_update | manual_unblock",
+                    "target": "phase file, step file, source path, or manual action",
+                    "reason": "why this action is needed",
+                    "instructions": "concrete recovery instructions",
+                }
+            ],
             "docsDrift": {
                 "requiresUpdate": False,
                 "targets": ["docs/ARCHITECTURE.md", "docs/ADR.md", "AGENTS.md"],
@@ -350,13 +422,19 @@ class StepExecutor:
         return (
             "You are the phase evaluation subagent. Evaluate the completed phase as a product and architecture increment.\n"
             "This is not a code-fixing task. Do not modify implementation files.\n\n"
+            f"{evaluator_skill}"
             f"{guardrails}\n\n---\n\n"
             f"{summary}"
+            f"{phase_rubric}"
             "## Evaluation Rules\n\n"
             "- Review the completed step summaries, implementation outputs, and current git diff.\n"
             "- Score the phase with the rubric below on a 0-100 scale.\n"
+            "- If phase-specific rubric weights are provided above, use them to compute overallScore from the category scores and include the weights in rubricWeights.\n"
+            "- If phase-specific rubric guidance is provided without weights, use it to interpret the common rubric categories.\n"
+            "- If no phase-specific rubric is provided, apply the common rubric using the step files, project docs, and phase rules.\n"
             "- Do not repeat full lint/build/test as the primary evaluation; implementation sessions already own that deterministic gate.\n"
             "- You may run additional checks only when needed to support a finding.\n"
+            "- For changes_requested or blocked, fill recommendedNextActions with the concrete recovery path.\n"
             "- If this is a frontend phase and the app can be run, include Lighthouse-style UX/performance observations when practical.\n"
             "- Treat unresolved docs drift as changes_requested.\n"
             "- Keep root AGENTS.md focused and under 300 lines; detailed rules belong in docs or phase AGENTS.md.\n"
@@ -625,6 +703,17 @@ class StepExecutor:
                 self._check_blockers()
             self._execute_single_step(pending, guardrails)
 
+    @staticmethod
+    def _print_recommended_actions(actions: list):
+        if not actions:
+            return
+        print("  Recommended recovery actions:")
+        for action in actions[:5]:
+            action_type = action.get("type", "action")
+            target = action.get("target", "unknown target")
+            reason = action.get("reason", "")
+            print(f"    - {action_type}: {target}" + (f" ({reason})" if reason else ""))
+
     def _run_phase_eval(self, guardrails: str):
         report_path = self._eval_dir / "phase-eval.json"
         output_path = self._outputs_dir / "phase-eval-output.json"
@@ -653,16 +742,20 @@ class StepExecutor:
         if decision == "blocked":
             index["blocked_at"] = self._stamp()
             index["blocked_reason"] = report.get("summary", "Phase evaluation blocked")
+            index["evaluation_recovery_actions"] = report.get("recommendedNextActions", [])
             self._write_json(self._index_file, index)
             self._update_top_index("blocked")
             self._commit_housekeeping(f"chore({self._phase_name}): phase evaluation blocked")
+            self._print_recommended_actions(index["evaluation_recovery_actions"])
             sys.exit(2)
 
         index["evaluation_failed_at"] = self._stamp()
         index["evaluation_summary"] = report.get("summary", "Phase evaluation requested changes")
+        index["evaluation_recovery_actions"] = report.get("recommendedNextActions", [])
         self._write_json(self._index_file, index)
         self._update_top_index("evaluation_failed")
         self._commit_housekeeping(f"chore({self._phase_name}): phase evaluation failed")
+        self._print_recommended_actions(index["evaluation_recovery_actions"])
         sys.exit(1)
 
     def _finalize(self):

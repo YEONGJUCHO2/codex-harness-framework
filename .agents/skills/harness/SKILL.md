@@ -21,7 +21,7 @@ Before proposing implementation work, read the project contract files that exist
 
 If the phase has local guardrails, also read:
 
-- `phases/{phase}/AGENTS.md` or `phases/{phase}/Agent.md`
+- `phases/{phase}/AGENTS.md`
 - `phases/{phase}/docs/*.md`
 
 ### B. Discuss
@@ -39,8 +39,10 @@ Step design rules:
 3. **Force preparation**: list the docs, phase-local rules, and prior-step files the implementation session must read before editing.
 4. **Specify interfaces, not full implementations**: provide function/class/module signatures and essential constraints. Leave implementation details to the executing session unless a specific algorithm is required.
 5. **Include official verification commands in the implementation contract**. Implementation agents own deterministic lint/build/test verification before submitting completion.
-6. **Write concrete warnings**: use "Do not do X. Reason: Y."
-7. **Use sortable phase names**: prefer `01-login`, `02-auth-api`, `03-dashboard`.
+6. **Create phase-local rules**: every phase must include `phases/{phase}/AGENTS.md`, even when it only states that the root rules apply without overrides.
+7. **Create phase-specific evaluation guidance**: every phase should include `phases/{phase}/eval-rubric.md` that adapts and weights the common rubric for the phase scope.
+8. **Write concrete warnings**: use "Do not do X. Reason: Y."
+9. **Use sortable phase names**: prefer `01-login`, `02-auth-api`, `03-dashboard`.
 
 ### D. Create Files
 
@@ -69,7 +71,7 @@ Rules:
 
 #### `phases/{phase}/AGENTS.md`
 
-Optional phase-local rules. Use this when a phase needs tighter constraints than the root `AGENTS.md`.
+Required phase-local rules. Create this for every phase so each independent Codex session has a phase-specific contract.
 
 Rules:
 
@@ -77,6 +79,59 @@ Rules:
 - Phase `AGENTS.md` adds constraints for that phase only.
 - If phase rules conflict with root CRITICAL rules, root CRITICAL rules win.
 - Use phase docs for detailed domain notes; keep phase `AGENTS.md` focused.
+- If no extra rules are needed, explicitly say that the phase inherits root rules without overrides.
+
+Template:
+
+```markdown
+# Phase Rules: {phase}
+
+## Scope
+- {one-line phase scope}
+
+## Additional Rules
+- Inherit root `/AGENTS.md` CRITICAL rules.
+- {phase-specific constraint, or "No additional phase-specific constraints."}
+
+## Verification
+- Implementation sessions must run the commands named in each step before setting `ready_for_completion`.
+```
+
+#### `phases/{phase}/eval-rubric.md`
+
+Required phase-specific evaluation guidance. Use this to adapt and weight the common rubric for the phase scope. Keep it short enough for the evaluator to apply consistently.
+
+Template:
+
+```markdown
+# Evaluation Rubric: {phase}
+
+## Phase Goal
+{What this phase must accomplish from the user's point of view.}
+
+## Weights
+- Correctness: 30
+- Architecture: 15
+- Test Quality: 20
+- Maintainability: 10
+- Security: 10
+- Documentation: 10
+- UX: 5
+- Lighthouse: 0
+
+## Category Guidance
+- Correctness: {phase-specific expectations}
+- Architecture: {boundaries and integration rules that matter here}
+- Test Quality: {what meaningful coverage means for this phase}
+- Maintainability: {complexity, duplication, or naming concerns}
+- Security: {auth, data, privacy, or command-safety concerns}
+- Documentation: {docs or phase notes that must stay aligned}
+- UX: {only if user-facing UI changed; otherwise mark not applicable}
+- Lighthouse: {only if frontend performance is relevant; otherwise mark not applicable}
+
+## Approval Notes
+- Name any phase-specific blocker conditions.
+```
 
 #### `phases/{phase}/index.json`
 
@@ -134,7 +189,8 @@ Read these files before editing:
 - `/docs/PRD.md`
 - `/docs/ARCHITECTURE.md`
 - `/docs/ADR.md`
-- `/phases/{phase}/AGENTS.md` when present
+- `/phases/{phase}/AGENTS.md`
+- `/phases/{phase}/eval-rubric.md`
 - {files created or changed by prior steps}
 
 Read the prior-step code carefully before modifying it.
@@ -181,7 +237,7 @@ python3 scripts/execute.py 01-login --push
 - Retrying implementation failures up to 3 times.
 - Separating code commits from phase metadata commits.
 - Recording `created_at`, `started_at`, `completed_at`, `failed_at`, `blocked_at`, and `evaluation_failed_at`.
-- Running phase-level rubric evaluation after all steps are completed.
+- Running phase-level rubric evaluation after all steps are completed, using `.agents/skills/phase-evaluator/SKILL.md` and `phases/{phase}/eval-rubric.md` when present.
 
 Generated runtime files:
 
@@ -192,7 +248,7 @@ phases/{phase}/eval/
 
 ### F. Phase Evaluation
 
-After every step is completed, `execute.py` runs a phase evaluation session. This is not just lint/test/build. The phase evaluator scores the increment with a rubric:
+After every step is completed, `execute.py` runs a phase evaluation session. This is not just lint/test/build. The phase evaluator follows `.agents/skills/phase-evaluator/SKILL.md` and scores the increment with the common rubric, interpreted through `phases/{phase}/eval-rubric.md` when present:
 
 - correctness
 - architecture compliance
@@ -213,6 +269,8 @@ The phase evaluator writes:
 ```text
 phases/{phase}/eval/phase-eval.json
 ```
+
+For `changes_requested` or `blocked`, the evaluator should include `recommendedNextActions` so the next run knows whether to reset a step, add a follow-up step, update docs, or wait for manual unblock.
 
 ### Recovery
 

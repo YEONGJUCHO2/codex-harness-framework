@@ -15,6 +15,7 @@ Copy these files into an app repository:
 - `docs/ADR.md`
 - `docs/UI_GUIDE.md` when the app has a frontend
 - `.agents/skills/harness/SKILL.md`
+- `.agents/skills/phase-evaluator/SKILL.md`
 - `.codex/config.toml`
 - `.codex/hooks.json`
 - `.codex/hooks/deny-dangerous-command.sh`
@@ -33,7 +34,7 @@ Then replace the placeholders in `AGENTS.md` and `docs/*.md` with the target app
 
 1. Ask Codex to use the Harness workflow and draft a phase plan.
 2. Review the proposed steps before files are created.
-3. Create `phases/index.json`, `phases/{phase}/index.json`, optional `phases/{phase}/AGENTS.md`, and `phases/{phase}/steps/stepN.md`.
+3. Create `phases/index.json`, `phases/{phase}/index.json`, `phases/{phase}/AGENTS.md`, `phases/{phase}/eval-rubric.md`, and `phases/{phase}/steps/stepN.md`.
 4. Run:
 
 ```bash
@@ -54,6 +55,9 @@ Use `--push` only when the phase branch should be pushed after completion.
 - Implementation sessions must submit work as `ready_for_completion`, but must not mark steps `completed`.
 - `scripts/execute.py` is the only component that marks a step `completed`.
 - `scripts/execute.py` injects root `AGENTS.md`, root `docs/*.md`, phase `AGENTS.md`, and phase docs when present.
+- Each phase should include `phases/{phase}/AGENTS.md` for phase-local execution rules, even when it only records that no extra rules apply.
+- Each phase should include `phases/{phase}/eval-rubric.md` to adapt and weight the common phase-evaluation rubric for that phase.
+- Phase evaluation uses `.agents/skills/phase-evaluator/SKILL.md` as the evaluator role contract.
 - `scripts/execute.py` records implementation outputs, phase eval reports, timestamps, and commits.
 - Root `AGENTS.md` should stay under 300 lines. Put detailed rules in `docs/` or phase-local `AGENTS.md`.
 
@@ -66,6 +70,7 @@ phases/
   index.json
   01-login/
     AGENTS.md
+    eval-rubric.md
     index.json
     steps/
       step0.md
@@ -82,7 +87,7 @@ Each step uses one implementation loop:
 
 - Implementation loop: up to 3 attempts to implement the step, run lint/build/test, and produce `ready_for_completion`.
 
-After every step is completed, the phase evaluator writes `phases/{phase}/eval/phase-eval.json` with rubric scores. Phase completion requires approval from this eval gate.
+After every step is completed, the phase evaluator writes `phases/{phase}/eval/phase-eval.json` with rubric scores. Phase completion requires approval from this eval gate. If `phases/{phase}/eval-rubric.md` exists, the evaluator uses it to interpret and weight the common rubric categories for that phase. Failed evaluations should include concrete `recommendedNextActions`.
 
 ## Validation
 
