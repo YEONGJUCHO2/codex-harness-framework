@@ -1,6 +1,6 @@
 # Codex Harness Framework
 
-Portable Harness setup for Codex-driven app development with separate implementation, review, and phase-evaluation loops.
+Portable Harness setup for Codex-driven app development with implementation-owned verification and a phase-evaluation loop.
 
 This repository is a template. It intentionally does not include app implementation output or completed `phases/*` results.
 
@@ -15,7 +15,6 @@ Copy these files into an app repository:
 - `docs/ADR.md`
 - `docs/UI_GUIDE.md` when the app has a frontend
 - `.agents/skills/harness/SKILL.md`
-- `.agents/skills/review/SKILL.md`
 - `.codex/config.toml`
 - `.codex/hooks.json`
 - `.codex/hooks/deny-dangerous-command.sh`
@@ -51,12 +50,11 @@ Use `--push` only when the phase branch should be pushed after completion.
 - The Stop hook runs `npm run lint`, `npm run build`, and `npm run test` when a copied target repository has `package.json`.
 - The default hook is a TDD guard that blocks implementation edits when a matching test file does not exist.
 - A dangerous-command guard blocks high-risk shell commands such as `rm -rf`, `git push --force`, `git reset --hard`, and `DROP TABLE`.
-- Implementation sessions must submit work as `ready_for_review`, but must not mark steps `completed`.
-- Review sessions run the official verification commands: `npm run lint`, `npm run build`, and `npm run test`.
-- Review-requested changes consume review cycles, not implementation-attempt retries.
+- Implementation sessions must run the official verification commands: `npm run lint`, `npm run build`, and `npm run test`.
+- Implementation sessions must submit work as `ready_for_completion`, but must not mark steps `completed`.
 - `scripts/execute.py` is the only component that marks a step `completed`.
 - `scripts/execute.py` injects root `AGENTS.md`, root `docs/*.md`, phase `AGENTS.md`, and phase docs when present.
-- `scripts/execute.py` records implementation outputs, review reports, phase eval reports, timestamps, and commits.
+- `scripts/execute.py` records implementation outputs, phase eval reports, timestamps, and commits.
 - Root `AGENTS.md` should stay under 300 lines. Put detailed rules in `docs/` or phase-local `AGENTS.md`.
 
 ## Phase Layout
@@ -73,20 +71,18 @@ phases/
       step0.md
       step1.md
     outputs/
-    reviews/
     eval/
 ```
 
-`outputs/`, `reviews/`, and `eval/` are created by `scripts/execute.py`.
+`outputs/` and `eval/` are created by `scripts/execute.py`.
 
 ## Completion Gates
 
-Each step uses two separate loops:
+Each step uses one implementation loop:
 
-- Implementation loop: up to 3 attempts to produce `ready_for_review`.
-- Review loop: up to 3 review cycles. The review-only session runs lint/build/test and writes a JSON report.
+- Implementation loop: up to 3 attempts to implement the step, run lint/build/test, and produce `ready_for_completion`.
 
-After every step is approved, the phase evaluator writes `phases/{phase}/eval/phase-eval.json` with rubric scores. Phase completion requires approval from this eval gate.
+After every step is completed, the phase evaluator writes `phases/{phase}/eval/phase-eval.json` with rubric scores. Phase completion requires approval from this eval gate.
 
 ## Validation
 

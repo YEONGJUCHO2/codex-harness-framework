@@ -294,38 +294,22 @@ class TestBuildPreamble:
     def test_implementation_agent_cannot_complete_step(self, executor):
         result = executor._build_preamble("", "")
         assert "Do not set this step to completed" in result
-        assert "ready_for_review" in result
+        assert "ready_for_completion" in result
 
-    def test_implementation_verification_is_review_agent_owned(self, executor):
+    def test_implementation_agent_owns_official_verification(self, executor):
         result = executor._build_preamble("", "")
-        assert "official AC lint/build/test verification is performed by the review agent" in result
-
-
-# ---------------------------------------------------------------------------
-# review and phase eval prompts
-# ---------------------------------------------------------------------------
-
-class TestReviewAndEvalPrompts:
-    def test_review_prompt_runs_standard_commands(self, executor):
-        step = {"step": 2, "name": "ui"}
-        report_path = executor._phase_dir / "reviews" / "step2-review-cycle1.json"
-
-        result = executor._build_review_prompt(
-            guardrails="GUARDS",
-            step_context="",
-            step=step,
-            cycle=1,
-            report_path=report_path,
-        )
-
-        assert "strict review-only subagent" in result
+        assert "Run the official verification commands" in result
         lint_pos = result.index("npm run lint")
         build_pos = result.index("npm run build")
         test_pos = result.index("npm run test")
         assert lint_pos < build_pos < test_pos
-        assert "Do not modify implementation code" in result
-        assert "changes_requested" in result
 
+
+# ---------------------------------------------------------------------------
+# phase eval prompts
+# ---------------------------------------------------------------------------
+
+class TestEvalPrompts:
     def test_phase_eval_prompt_uses_rubric_not_primary_build_gate(self, executor):
         report_path = executor._phase_dir / "eval" / "phase-eval.json"
 
@@ -335,6 +319,7 @@ class TestReviewAndEvalPrompts:
         assert "overallScore >= 85" in result
         assert "docs drift" in result
         assert "Do not repeat full lint/build/test as the primary evaluation" in result
+        assert "implementation sessions already own that deterministic gate" in result
 
 
 # ---------------------------------------------------------------------------
@@ -515,6 +500,35 @@ class TestCommitStep:
 
         assert ("rm", "--cached", "--ignore-unmatch", "--", "phases/0-mvp/step2-output.json") in calls
         assert ("rm", "--cached", "--ignore-unmatch", "--", "phases/0-mvp/index.json") in calls
+
+
+# ---------------------------------------------------------------------------
+# _execute_single_step
+# ---------------------------------------------------------------------------
+
+class TestExecuteSingleStep:
+    def test_completes_ready_for_completion_without_step_review(self, executor, phase_dir):
+        step = {"step": 2, "name": "ui"}
+        commit = MagicMock()
+        executor._commit_step = commit
+
+        def fake_implementation(*, step, guardrails):
+            index = json.loads((phase_dir / "index.json").read_text())
+            current = ex.StepExecutor._step_record(index, step["step"])
+            current["status"] = "ready_for_completion"
+            current["summary"] = "UI implemented; lint/build/test passed"
+            (phase_dir / "index.json").write_text(json.dumps(index, indent=2, ensure_ascii=False))
+
+        executor._run_implementation_until_ready = fake_implementation
+
+        assert executor._execute_single_step(step, "GUARDS") is True
+
+        index = json.loads((phase_dir / "index.json").read_text())
+        current = ex.StepExecutor._step_record(index, 2)
+        assert current["status"] == "completed"
+        assert current["verified_by"] == "implementation_agent"
+        assert current["summary"] == "UI implemented; lint/build/test passed"
+        commit.assert_called_once_with(2, "ui")
 
 
 # ---------------------------------------------------------------------------

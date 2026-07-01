@@ -15,7 +15,7 @@
 ## 개발 프로세스
 - CRITICAL: 새 기능 구현 시 반드시 테스트를 먼저 작성하고, 테스트가 통과하는 구현을 작성할 것 (TDD)
 - CRITICAL: `rm -rf`, `git push --force`, `git reset --hard`, `DROP TABLE` 같은 고위험 명령은 직접 실행하지 말 것. `.codex/hooks/deny-dangerous-command.sh`가 이를 차단한다.
-- CRITICAL: 구현 세션은 step을 completed로 표시하지 말 것. 구현 완료 시 ready_for_review까지만 기록하고, completed는 리뷰 승인 후 하네스 executor만 기록할 것.
+- CRITICAL: 구현 세션은 lint/build/test를 직접 실행하고 step을 completed로 표시하지 말 것. 구현 및 검증 완료 시 ready_for_completion까지만 기록하고, completed는 하네스 executor만 기록할 것.
 - 커밋 메시지는 conventional commits 형식을 따를 것 (feat:, fix:, docs:, refactor:)
 
 ## 명령어

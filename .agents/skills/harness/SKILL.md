@@ -5,7 +5,7 @@ description: Use when setting up or using a portable Codex Harness workflow, cre
 
 # Harness Workflow
 
-This repository uses a portable Harness workflow for Codex-driven app development. Use it to plan work as small independent steps, execute those steps in fresh Codex sessions, review each step with a separate review-only session, and keep project rules, architecture docs, tests, review reports, eval reports, and phase metadata in sync.
+This repository uses a portable Harness workflow for Codex-driven app development. Use it to plan work as small independent steps, execute those steps in fresh Codex implementation sessions, keep lint/build/test verification inside the implementation session, and keep project rules, architecture docs, tests, eval reports, and phase metadata in sync.
 
 ## Workflow
 
@@ -38,7 +38,7 @@ Step design rules:
 2. **Make each step self-contained**: every `stepN.md` runs in an independent Codex implementation session. Do not rely on chat history.
 3. **Force preparation**: list the docs, phase-local rules, and prior-step files the implementation session must read before editing.
 4. **Specify interfaces, not full implementations**: provide function/class/module signatures and essential constraints. Leave implementation details to the executing session unless a specific algorithm is required.
-5. **Do not put official verification commands in the implementation instructions**. Implementation agents may run targeted checks while debugging, but official verification is owned by the review agent.
+5. **Include official verification commands in the implementation contract**. Implementation agents own deterministic lint/build/test verification before submitting completion.
 6. **Write concrete warnings**: use "Do not do X. Reason: Y."
 7. **Use sortable phase names**: prefer `01-login`, `02-auth-api`, `03-dashboard`.
 
@@ -64,7 +64,7 @@ Top-level phase index. Append a new entry if the file already exists.
 Rules:
 
 - `dir`: phase directory name.
-- `status`: one of `"pending"`, `"completed"`, `"error"`, `"blocked"`, `"review_failed"`.
+- `status`: one of `"pending"`, `"completed"`, `"error"`, `"blocked"`, `"evaluation_failed"`.
 - Do not add timestamps at creation time. `scripts/execute.py` records them while running.
 
 #### `phases/{phase}/AGENTS.md`
@@ -105,21 +105,19 @@ Step statuses:
 
 | Status | Meaning | Writer |
 | --- | --- | --- |
-| `pending` | Step has not produced reviewable work yet. | Plan author or executor |
+| `pending` | Step has not produced verified work yet. | Plan author or executor |
 | `in_progress` | Implementation session is currently working. | Executor |
-| `ready_for_review` | Implementation is ready for independent review. | Implementation agent |
-| `completed` | Review approved the step. | Executor only |
-| `blocked` | User input, credentials, or manual setup is required. | Implementation/review agent, timestamp by executor |
-| `error` | Implementation failed to produce reviewable work within its attempt budget. | Executor |
-| `review_failed` | Review requested changes after the review-cycle budget was exhausted. | Executor |
+| `ready_for_completion` | Implementation and verification are done. | Implementation agent |
+| `completed` | Executor accepted the verified step and recorded metadata. | Executor only |
+| `blocked` | User input, credentials, or manual setup is required. | Implementation agent or phase evaluator, timestamp by executor |
+| `error` | Implementation failed to produce verified work within its attempt budget. | Executor |
+| `evaluation_failed` | Phase evaluation requested changes after all steps completed. | Executor |
 
 Important:
 
 - Implementation agents must never mark a step `completed`.
-- `completed` is written only by `scripts/execute.py` after a review report with `decision: "approved"`.
-- Implementation attempts and review cycles are separate budgets:
-  - implementation attempts: max 3 per implementation pass
-  - review cycles: max 3 per step
+- `completed` is written only by `scripts/execute.py` after the implementation session reports `ready_for_completion`.
+- Implementation attempts are capped at 3 per step.
 
 #### `phases/{phase}/steps/step{N}.md`
 
@@ -145,18 +143,19 @@ Read the prior-step code carefully before modifying it.
 
 {Concrete implementation instructions. Include file paths, class/function signatures, behavior constraints, and data contracts. Keep snippets at interface/signature level unless exact implementation is required.}
 
-## Submit For Review
+## Submit For Completion
 
 When implementation is ready:
 
-1. Update `phases/{phase}/index.json` for this step to `"status": "ready_for_review"`.
-2. Add a concise `"summary"` describing changed files and key decisions.
-3. Do not mark the step completed.
+1. Run the official verification commands (`npm run lint`, `npm run build`, `npm run test`) or the step-specific AC commands when different.
+2. Update `phases/{phase}/index.json` for this step to `"status": "ready_for_completion"`.
+3. Add a concise `"summary"` describing changed files, key decisions, and verification results.
+4. Do not mark the step completed.
 
 ## Do Not
 
-- Do not run broad official verification as a completion gate. Reason: the review agent owns official verification.
-- Do not set `"status": "completed"`. Reason: only `scripts/execute.py` may complete a reviewed step.
+- Do not skip official verification. Reason: the implementation session owns deterministic lint/build/test.
+- Do not set `"status": "completed"`. Reason: only `scripts/execute.py` may complete a verified step.
 - Do not break existing tests.
 - Do not commit manually. `scripts/execute.py` owns commit creation.
 ````
@@ -177,27 +176,23 @@ python3 scripts/execute.py 01-login --push
 - Loading Codex hooks through `CODEX_PROJECT_DIR`, `CLAUDE_PROJECT_DIR`, git root, then `pwd` fallback.
 - Running `npm run lint`, `npm run build`, and `npm run test` from the Stop hook when the target repository has `package.json`.
 - Blocking high-risk shell commands through `.codex/hooks/deny-dangerous-command.sh`.
-- Passing completed step summaries to later implementation and review sessions.
-- Running implementation sessions until `ready_for_review`.
-- Running strict review-only sessions for each step.
-- Running `npm run lint`, `npm run test`, and `npm run build` from the review session.
+- Passing completed step summaries to later implementation sessions.
+- Running implementation sessions until `ready_for_completion`.
 - Retrying implementation failures up to 3 times.
-- Handling review-requested changes as separate review cycles, not implementation failures.
 - Separating code commits from phase metadata commits.
-- Recording `created_at`, `started_at`, `completed_at`, `failed_at`, `blocked_at`, and `review_failed_at`.
-- Running phase-level rubric evaluation after all steps are approved.
+- Recording `created_at`, `started_at`, `completed_at`, `failed_at`, `blocked_at`, and `evaluation_failed_at`.
+- Running phase-level rubric evaluation after all steps are completed.
 
 Generated runtime files:
 
 ```text
 phases/{phase}/outputs/
-phases/{phase}/reviews/
 phases/{phase}/eval/
 ```
 
 ### F. Phase Evaluation
 
-After every step is approved, `execute.py` runs a phase evaluation session. This is not just lint/test/build. The phase evaluator scores the increment with a rubric:
+After every step is completed, `execute.py` runs a phase evaluation session. This is not just lint/test/build. The phase evaluator scores the increment with a rubric:
 
 - correctness
 - architecture compliance
@@ -223,4 +218,4 @@ phases/{phase}/eval/phase-eval.json
 
 - For an `error` step, reset that step to `"pending"`, remove `error_message`, and rerun.
 - For a `blocked` step, resolve `blocked_reason`, reset that step to `"pending"`, remove `blocked_reason`, and rerun.
-- For a `review_failed` step, address the latest review report, reset status to `"pending"`, and rerun.
+- For an `evaluation_failed` phase, address the latest phase eval report, reset the relevant follow-up step or phase status to `"pending"`, and rerun.
